@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace Sandstorm\KeycloakAdminApi\Features;
 
-use Sandstorm\KeycloakAdminApi\Connection\KeycloakAuthenticationException;
+use Sandstorm\KeycloakAdminApi\Connection\UnexpectedKeycloakResponseException;
 use Sandstorm\KeycloakAdminApi\Features\KeycloakSessionsApi\Dto\KeycloakSessions;
 use Sandstorm\KeycloakAdminApi\SharedModel\KeycloakUserId;
 
 /**
  * The active-session slice of the Keycloak Admin port.
  *
- * Every method throws {@see KeycloakAuthenticationException} on 401/403 (the one catchable, friendly
- * case); all other failures propagate to be logged.
+ * Every method throws {@see UnexpectedKeycloakResponseException} on any non-2xx or transport failure;
+ * read its ->statusCode (401/403 = denied, the one a UI turns into a friendly notice).
  */
 interface KeycloakSessionsApi
 {

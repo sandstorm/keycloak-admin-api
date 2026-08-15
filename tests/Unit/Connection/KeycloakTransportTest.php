@@ -7,6 +7,7 @@ namespace Sandstorm\KeycloakAdminApi\Tests\Unit\Connection;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -54,6 +55,8 @@ final class KeycloakTransportTest extends TestCase
                 }
             },
             new Client(['handler' => HandlerStack::create(new MockHandler([new Response(200, [], '[]')]))]),
+            new HttpFactory(),
+            new HttpFactory(),
             new readonly class implements KeycloakTokenProvider {
                 public function currentBearer(): string
                 {

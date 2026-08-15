@@ -35,6 +35,7 @@ It exposes the admin API in modern PHP, using **immutable typed DTOs and collect
 
 ```php
 use GuzzleHttp\Client;
+use GuzzleHttp\Psr7\HttpFactory;
 use Sandstorm\KeycloakAdminApi\Connection\Auth\ServiceAccountTokenProvider;
 use Sandstorm\KeycloakAdminApi\Connection\KeycloakSettings;
 use Sandstorm\KeycloakAdminApi\Connection\KeycloakSettingsProvider;
@@ -47,9 +48,17 @@ $settings = new class implements KeycloakSettingsProvider {
     }
 };
 
-// Inject a client that never body-logs - admin responses carry user PII.
-$client = new Client(['http_errors' => true]);
-$transport = new KeycloakTransport($settings, $client, new ServiceAccountTokenProvider($settings, $client));
+// Any PSR-18 client + PSR-17 factories work; here Guzzle provides both. Inject a client that never
+// body-logs - admin responses carry user PII.
+$client = new Client();
+$httpFactory = new HttpFactory(); // PSR-17 request + stream factory
+$transport = new KeycloakTransport(
+    $settings,
+    $client,
+    $httpFactory,
+    $httpFactory,
+    new ServiceAccountTokenProvider($settings, $client, $httpFactory, $httpFactory),
+);
 
 $users = new KeycloakUsersApiImplementation($transport);
 foreach ($users->list(search: 'jane', first: 0, max: 20, enabled: true) as $user) {
@@ -226,7 +235,7 @@ mise run analyse          # phpstan (level 6)
 Two tiers:
 
 - **Unit** (`tests/Unit`) - fast, hermetic. Real logic only (DTO/collection parsing tolerance, token cache, array-body
-  encoding, query building, the 401/403-vs-propagate taxonomy) driven through a Guzzle mock.
+  encoding, query building, the non-2xx → `UnexpectedKeycloakResponseException` (with `statusCode`) mapping) driven through a PSR-18 mock.
 - **Integration / E2E** (`tests/Integration`) - runs the client against a **real Keycloak 26.5.3** in Docker
   (`tests/Integration/docker-compose.yml` imports a self-contained `test-realm`). This proves the wire contract unit
   tests cannot.

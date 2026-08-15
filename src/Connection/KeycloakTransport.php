@@ -6,23 +6,23 @@ namespace Sandstorm\KeycloakAdminApi\Connection;
 
 use const JSON_THROW_ON_ERROR;
 
-use GuzzleHttp\Client;
-use GuzzleHttp\Exception\GuzzleException;
-use GuzzleHttp\Exception\RequestException;
-use GuzzleHttp\RequestOptions;
+use Psr\Http\Client\ClientExceptionInterface;
+use Psr\Http\Client\ClientInterface;
+use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
-use RuntimeException;
+use Psr\Http\Message\StreamFactoryInterface;
 use Sandstorm\KeycloakAdminApi\Connection\Auth\KeycloakTokenProvider;
 use UnexpectedValueException;
 
 use function array_values;
 use function is_array;
 use function json_decode;
+use function json_encode;
 use function sprintf;
 use function trim;
 
 /**
- * The single gateway to the Keycloak Admin API. It owns the Guzzle client and the URL plumbing, and
+ * The single gateway to the Keycloak Admin API. It owns the HTTP client and the URL plumbing, and
  * exposes the admin API as path-in/response-out verbs.
  *
  * Authentication is delegated to an injected {@see KeycloakTokenProvider}: every request transparently
@@ -34,25 +34,28 @@ use function trim;
 final class KeycloakTransport
 {
     /**
-     * The Guzzle client is injected fully built by the consumer — this library is app-independent and
-     * does not construct HTTP clients. Consumers must inject a client that never body-logs: admin
-     * responses carry user PII. The token provider is bound once by the consumer (from config) — the
-     * transport never selects it and never falls back.
+     * The HTTP client is injected fully built by the consumer — this library is app-independent and
+     * PSR-18/PSR-17 based, so it binds to no concrete HTTP client (Guzzle, Symfony HttpClient, …).
+     * Consumers must inject a client that never body-logs: admin responses carry user PII. The token
+     * provider is bound once by the consumer (from config) — the transport never selects it and never
+     * falls back.
      */
     public function __construct(
         private readonly KeycloakSettingsProvider $settings,
-        private readonly Client $client,
+        private readonly ClientInterface $client,
+        private readonly RequestFactoryInterface $requestFactory,
+        private readonly StreamFactoryInterface $streamFactory,
         private readonly KeycloakTokenProvider $tokenProvider,
     ) {}
 
     /**
      * GET an admin API path (relative to {baseUrl}/admin/realms/{realm}/), authenticated.
      *
-     * @throws KeycloakAuthenticationException on 401/403, RuntimeException on any other request failure
+     * @throws UnexpectedKeycloakResponseException on a transport failure or any non-2xx (read ->statusCode; 401/403 = denied)
      */
     public function get(string $path): ResponseInterface
     {
-        return $this->send('GET', $path, []);
+        return $this->send('GET', $path);
     }
 
     /**
@@ -60,7 +63,7 @@ final class KeycloakTransport
      *
      * @return array<int|string, mixed>
      *
-     * @throws KeycloakAuthenticationException on 401/403, RuntimeException on any other request failure, UnexpectedValueException when the body is not a JSON array/object
+     * @throws UnexpectedKeycloakResponseException on a transport failure or any non-2xx (read ->statusCode; 401/403 = denied), UnexpectedValueException when the body is not a JSON array/object
      */
     public function getJson(string $path): array
     {
@@ -78,11 +81,11 @@ final class KeycloakTransport
      *
      * @param  array<string, mixed>  $body
      *
-     * @throws KeycloakAuthenticationException on 401/403, RuntimeException on any other request failure
+     * @throws UnexpectedKeycloakResponseException on a transport failure or any non-2xx (read ->statusCode; 401/403 = denied)
      */
     public function postJson(string $path, array $body): ResponseInterface
     {
-        return $this->send('POST', $path, [RequestOptions::JSON => (object) $body]);
+        return $this->send('POST', $path, json_encode((object) $body, JSON_THROW_ON_ERROR));
     }
 
     /**
@@ -90,11 +93,11 @@ final class KeycloakTransport
      *
      * @param  array<int|string, mixed>  $body
      *
-     * @throws KeycloakAuthenticationException on 401/403, RuntimeException on any other request failure
+     * @throws UnexpectedKeycloakResponseException on a transport failure or any non-2xx (read ->statusCode; 401/403 = denied)
      */
     public function putJson(string $path, array $body): ResponseInterface
     {
-        return $this->send('PUT', $path, [RequestOptions::JSON => (object) $body]);
+        return $this->send('PUT', $path, json_encode((object) $body, JSON_THROW_ON_ERROR));
     }
 
     /**
@@ -106,11 +109,11 @@ final class KeycloakTransport
      *
      * @param  array<array-key, mixed>  $jsonList
      *
-     * @throws KeycloakAuthenticationException on 401/403, RuntimeException on any other request failure
+     * @throws UnexpectedKeycloakResponseException on a transport failure or any non-2xx (read ->statusCode; 401/403 = denied)
      */
     public function putList(string $path, array $jsonList): ResponseInterface
     {
-        return $this->send('PUT', $path, [RequestOptions::JSON => array_values($jsonList)]);
+        return $this->send('PUT', $path, json_encode(array_values($jsonList), JSON_THROW_ON_ERROR));
     }
 
     /**
@@ -120,29 +123,33 @@ final class KeycloakTransport
      * Keycloak's body-less endpoints (e.g. add-user-to-group `PUT /users/{id}/groups/{groupId}`) 500 on
      * an unexpected JSON payload. Use this when the endpoint takes the target purely from the URL.
      *
-     * @throws KeycloakAuthenticationException on 401/403, RuntimeException on any other request failure
+     * @throws UnexpectedKeycloakResponseException on a transport failure or any non-2xx (read ->statusCode; 401/403 = denied)
      */
     public function put(string $path): ResponseInterface
     {
-        return $this->send('PUT', $path, []);
+        return $this->send('PUT', $path);
     }
 
     /**
      * DELETE an admin API path (relative to {baseUrl}/admin/realms/{realm}/), authenticated.
      *
-     * @throws KeycloakAuthenticationException on 401/403, RuntimeException on any other request failure
+     * @throws UnexpectedKeycloakResponseException on a transport failure or any non-2xx (read ->statusCode; 401/403 = denied)
      */
     public function delete(string $path): ResponseInterface
     {
-        return $this->send('DELETE', $path, []);
+        return $this->send('DELETE', $path);
     }
 
     /**
-     * @param  array<string, mixed>  $guzzleOptions
+     * Build the authenticated request, send it, and translate the outcome.
      *
-     * @throws KeycloakAuthenticationException on 401/403, RuntimeException on any other request failure
+     * PSR-18 clients — unlike Guzzle's `http_errors` mode — do NOT throw on 4xx/5xx: only a transport
+     * failure (connection refused, timeout, DNS) raises {@see ClientExceptionInterface}. So the HTTP
+     * error handling here is driven by inspecting the returned status, not by a catch.
+     *
+     * @throws UnexpectedKeycloakResponseException on a transport failure or any non-2xx (read ->statusCode; 401/403 = denied)
      */
-    private function send(string $method, string $path, array $guzzleOptions): ResponseInterface
+    private function send(string $method, string $path, ?string $jsonBody = null): ResponseInterface
     {
         $endpointLabel = $method . ' ' . $path;
 
@@ -151,43 +158,46 @@ final class KeycloakTransport
         // propagate as-is, not be mis-wrapped as a request-level auth/unavailable failure below.
         $bearer = $this->tokenProvider->currentBearer();
 
+        $request = $this->requestFactory
+            ->createRequest($method, $this->adminUrl($path))
+            ->withHeader('Authorization', 'Bearer ' . $bearer)
+            ->withHeader('Accept', 'application/json');
+
+        if ($jsonBody !== null) {
+            $request = $request
+                ->withHeader('Content-Type', 'application/json')
+                ->withBody($this->streamFactory->createStream($jsonBody));
+        }
+
         try {
-            return $this->client->request(
-                $method,
-                $this->adminUrl($path),
-                $guzzleOptions + [
-                    RequestOptions::HEADERS => [
-                        'Authorization' => 'Bearer ' . $bearer,
-                        'Accept' => 'application/json',
-                    ],
-                ],
-            );
-        } catch (GuzzleException $exception) {
-            $response = $exception instanceof RequestException ? $exception->getResponse() : null;
-            $status = $response?->getStatusCode();
-
-            // 401/403 = the caller is not accepted / not permitted → the one catchable, friendly
-            // outcome. Anything else (connection error, timeout, 5xx) = Keycloak could not serve the
-            // request → a plain RuntimeException that propagates and gets logged.
-            if ($status === 401 || $status === 403) {
-                // Carry Keycloak's own error body (Guzzle's message truncates it) — the fastest clue
-                // when debugging a missing audience/role. These 401/403 bodies carry no user PII.
-                // $response is non-null here: a null response could not have yielded a 401/403 status.
-                $upstream = trim((string) $response->getBody());
-
-                throw new KeycloakAuthenticationException(
-                    sprintf('Keycloak admin %s was not authorized (HTTP %d): %s', $endpointLabel, $status, $upstream !== '' ? $upstream : $exception->getMessage()),
-                    1750000005,
-                    $exception,
-                );
-            }
-
-            throw new RuntimeException(
+            $response = $this->client->sendRequest($request);
+        } catch (ClientExceptionInterface $exception) {
+            // Transport-level failure (connection error, timeout, DNS) → no response, so no status.
+            throw new UnexpectedKeycloakResponseException(
                 sprintf('Keycloak admin %s request failed: %s', $endpointLabel, $exception->getMessage()),
                 1750000006,
+                null,
+                '',
                 $exception,
             );
         }
+
+        $status = $response->getStatusCode();
+        if ($status < 400) {
+            return $response;
+        }
+
+        // Any non-2xx is the single failure type — the caller reads ->statusCode to react (401/403 =
+        // denied, the one a UI turns into a friendly notice; 5xx = outage/retryable; 404/409 = etc).
+        // Carry Keycloak's own error body: the fastest clue when debugging a missing audience/role.
+        $upstream = trim((string) $response->getBody());
+
+        throw new UnexpectedKeycloakResponseException(
+            sprintf('Keycloak admin %s returned an unexpected HTTP %d: %s', $endpointLabel, $status, $upstream !== '' ? $upstream : '(no body)'),
+            1750000007,
+            $status,
+            $upstream,
+        );
     }
 
     /**

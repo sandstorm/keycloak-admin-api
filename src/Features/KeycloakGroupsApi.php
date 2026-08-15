@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Sandstorm\KeycloakAdminApi\Features;
 
-use Sandstorm\KeycloakAdminApi\Connection\KeycloakAuthenticationException;
+use Sandstorm\KeycloakAdminApi\Connection\UnexpectedKeycloakResponseException;
 use Sandstorm\KeycloakAdminApi\Features\KeycloakGroupsApi\Dto\KeycloakGroups;
 use Sandstorm\KeycloakAdminApi\SharedModel\KeycloakUserId;
 
@@ -15,8 +15,9 @@ use Sandstorm\KeycloakAdminApi\SharedModel\KeycloakUserId;
  * add/remove **diff** is computed and applied by the caller (the manage-groups UI action), so partial
  * failure stays visible per item. This interface never assumes atomicity across a diff.
  *
- * Every method throws {@see KeycloakAuthenticationException} on 401/403 (the one catchable, friendly
- * case); all other failures propagate to be logged. Both mutations are idempotent.
+ * Every method throws {@see UnexpectedKeycloakResponseException} on any non-2xx or transport failure;
+ * read its ->statusCode (401/403 = denied, the one a UI turns into a friendly notice). Both mutations
+ * are idempotent.
  */
 interface KeycloakGroupsApi
 {

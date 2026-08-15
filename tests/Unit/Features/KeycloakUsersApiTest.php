@@ -7,8 +7,7 @@ namespace Sandstorm\KeycloakAdminApi\Tests\Unit\Features;
 use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
-use RuntimeException;
-use Sandstorm\KeycloakAdminApi\Connection\KeycloakAuthenticationException;
+use Sandstorm\KeycloakAdminApi\Connection\UnexpectedKeycloakResponseException;
 use Sandstorm\KeycloakAdminApi\Features\KeycloakUsersApi\KeycloakUsersApiImplementation;
 use Sandstorm\KeycloakAdminApi\SharedModel\KeycloakUserId;
 use Sandstorm\KeycloakAdminApi\Tests\Support\MockKeycloak;
@@ -107,49 +106,59 @@ final class KeycloakUsersApiTest extends TestCase
     }
 
     #[Test]
-    public function a_403_becomes_a_catchable_authentication_exception(): void
+    public function a_403_surfaces_as_the_response_exception_carrying_status_403(): void
     {
         $mock = new MockKeycloak([new Response(403, [], 'Forbidden')]);
 
-        $this->expectException(KeycloakAuthenticationException::class);
-
-        (new KeycloakUsersApiImplementation($mock->transport))->list(null, 0, 10, null);
+        try {
+            (new KeycloakUsersApiImplementation($mock->transport))->list(null, 0, 10, null);
+            self::fail('expected an UnexpectedKeycloakResponseException');
+        } catch (UnexpectedKeycloakResponseException $exception) {
+            // The denied case is not a separate type — the caller (a UI) reacts on the status code.
+            self::assertSame(403, $exception->statusCode);
+        }
     }
 
     #[Test]
-    public function a_401_becomes_a_catchable_authentication_exception(): void
+    public function a_401_surfaces_as_the_response_exception_carrying_status_401(): void
     {
         $mock = new MockKeycloak([new Response(401, [], 'Unauthorized')]);
 
-        $this->expectException(KeycloakAuthenticationException::class);
-
-        (new KeycloakUsersApiImplementation($mock->transport))->list(null, 0, 10, null);
+        try {
+            (new KeycloakUsersApiImplementation($mock->transport))->list(null, 0, 10, null);
+            self::fail('expected an UnexpectedKeycloakResponseException');
+        } catch (UnexpectedKeycloakResponseException $exception) {
+            self::assertSame(401, $exception->statusCode);
+        }
     }
 
     #[Test]
-    public function carries_keycloaks_upstream_error_body_in_the_exception_message(): void
+    public function carries_keycloaks_upstream_error_body_on_the_exception(): void
     {
         $mock = new MockKeycloak([new Response(403, [], '{"error":"Forbidden: requires view-users"}')]);
 
         try {
             (new KeycloakUsersApiImplementation($mock->transport))->list(null, 0, 10, null);
-            self::fail('expected a KeycloakAuthenticationException');
-        } catch (KeycloakAuthenticationException $exception) {
+            self::fail('expected an UnexpectedKeycloakResponseException');
+        } catch (UnexpectedKeycloakResponseException $exception) {
+            self::assertSame(403, $exception->statusCode);
+            self::assertSame('{"error":"Forbidden: requires view-users"}', $exception->responseBody);
             self::assertStringContainsString('HTTP 403', $exception->getMessage());
             self::assertStringContainsString('Forbidden: requires view-users', $exception->getMessage());
         }
     }
 
     #[Test]
-    public function a_5xx_propagates_as_a_plain_runtime_exception_not_the_catchable_auth_case(): void
+    public function a_5xx_surfaces_as_the_response_exception_carrying_status_503(): void
     {
         $mock = new MockKeycloak([new Response(503, [], 'Service Unavailable')]);
 
         try {
             (new KeycloakUsersApiImplementation($mock->transport))->list(null, 0, 10, null);
-            self::fail('expected an exception');
-        } catch (RuntimeException $exception) {
-            self::assertNotInstanceOf(KeycloakAuthenticationException::class, $exception);
+            self::fail('expected an UnexpectedKeycloakResponseException');
+        } catch (UnexpectedKeycloakResponseException $exception) {
+            // Same type as a 403 — the status is what tells an outage (retryable) from a denial.
+            self::assertSame(503, $exception->statusCode);
         }
     }
 }

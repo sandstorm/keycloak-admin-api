@@ -8,6 +8,7 @@ use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Middleware;
+use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -69,6 +70,8 @@ final class ServiceAccountTokenProviderTest extends TestCase
                 }
             },
             new Client(['handler' => $stack]),
+            new HttpFactory(),
+            new HttpFactory(),
         );
     }
 }

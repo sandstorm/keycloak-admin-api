@@ -8,6 +8,7 @@ use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Middleware;
+use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
 use Psr\Http\Message\RequestInterface;
 use Sandstorm\KeycloakAdminApi\Connection\Auth\KeycloakTokenProvider;
@@ -44,6 +45,8 @@ final class MockKeycloak
                 }
             },
             new Client(['handler' => $stack]),
+            new HttpFactory(),
+            new HttpFactory(),
             new readonly class implements KeycloakTokenProvider {
                 public function currentBearer(): string
                 {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Sandstorm\KeycloakAdminApi\Tests\Integration;
 
 use GuzzleHttp\Client;
+use GuzzleHttp\Psr7\HttpFactory;
 use PHPUnit\Framework\TestCase;
 use Sandstorm\KeycloakAdminApi\Connection\Auth\ServiceAccountTokenProvider;
 use Sandstorm\KeycloakAdminApi\Connection\KeycloakSettings;
@@ -57,12 +58,15 @@ abstract class IntegrationTestCase extends TestCase
             }
         };
 
-        $client = new Client(['http_errors' => true, 'timeout' => 10]);
+        $client = new Client(['timeout' => 10]);
+        $httpFactory = new HttpFactory();
 
         $this->transport = new KeycloakTransport(
             $settings,
             $client,
-            new ServiceAccountTokenProvider($settings, $client),
+            $httpFactory,
+            $httpFactory,
+            new ServiceAccountTokenProvider($settings, $client, $httpFactory, $httpFactory),
         );
     }
 

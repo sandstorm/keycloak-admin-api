@@ -7,7 +7,7 @@ namespace Sandstorm\KeycloakAdminApi\Tests\Unit\Features;
 use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
-use Sandstorm\KeycloakAdminApi\Connection\KeycloakAuthenticationException;
+use Sandstorm\KeycloakAdminApi\Connection\UnexpectedKeycloakResponseException;
 use Sandstorm\KeycloakAdminApi\Features\KeycloakSessionsApi\KeycloakSessionsApiImplementation;
 use Sandstorm\KeycloakAdminApi\SharedModel\KeycloakUserId;
 use Sandstorm\KeycloakAdminApi\Tests\Support\MockKeycloak;
@@ -49,7 +49,7 @@ final class KeycloakSessionsApiTest extends TestCase
     {
         $mock = new MockKeycloak([new Response(403, [], 'Forbidden')]);
 
-        $this->expectException(KeycloakAuthenticationException::class);
+        $this->expectException(UnexpectedKeycloakResponseException::class);
 
         (new KeycloakSessionsApiImplementation($mock->transport))->logoutAll(new KeycloakUserId('u-1'));
     }
