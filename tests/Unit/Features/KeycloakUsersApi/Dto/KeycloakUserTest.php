@@ -79,4 +79,85 @@ final class KeycloakUserTest extends TestCase
 
         KeycloakUser::fromRawResponse(['username' => 'jane']);
     }
+
+    #[Test]
+    public function round_trips_unmodelled_fields_losslessly_through_to_representation(): void
+    {
+        $raw = [
+            'id' => 'abc-123',
+            'username' => 'jane',
+            'email' => 'jane@example.test',
+            'firstName' => 'Jane',
+            'lastName' => 'Doe',
+            'enabled' => true,
+            'emailVerified' => true,
+            'attributes' => ['fm_id_deelnemer' => ['42']],
+            // Fields the DTO does not model — must survive an update untouched.
+            'createdTimestamp' => 1700000000000,
+            'disableableCredentialTypes' => ['otp'],
+            'requiredActions' => [],
+            'notBefore' => 0,
+            'access' => ['manageGroupMembership' => true, 'view' => true, 'manage' => false],
+        ];
+
+        $representation = KeycloakUser::fromRawResponse($raw)->toRepresentation();
+
+        self::assertSame(1700000000000, $representation['createdTimestamp']);
+        self::assertSame(['otp'], $representation['disableableCredentialTypes']);
+        self::assertSame(0, $representation['notBefore']);
+        self::assertSame(['manageGroupMembership' => true, 'view' => true, 'manage' => false], $representation['access']);
+        // Modelled identity fields are present and unchanged.
+        self::assertSame('jane', $representation['username']);
+        self::assertSame('jane@example.test', $representation['email']);
+        self::assertSame(['fm_id_deelnemer' => ['42']], $representation['attributes']);
+    }
+
+    #[Test]
+    public function overlays_only_the_edited_fields_and_preserves_everything_else(): void
+    {
+        $raw = [
+            'id' => 'abc-123',
+            'username' => 'jane',
+            'email' => 'jane@example.test',
+            'firstName' => 'Jane',
+            'lastName' => 'Doe',
+            'enabled' => true,
+            'emailVerified' => false,
+            'attributes' => ['fm_id_deelnemer' => ['42']],
+            'createdTimestamp' => 1700000000000,
+        ];
+
+        $edited = KeycloakUser::fromRawResponse($raw)
+            ->withFirstName('Janet')
+            ->withEnabled(false)
+            ->withEmailVerified(true)
+            ->withAttribute('nickname', ['J']);
+
+        $representation = $edited->toRepresentation();
+
+        // Edited.
+        self::assertSame('Janet', $representation['firstName']);
+        self::assertFalse($representation['enabled']);
+        self::assertTrue($representation['emailVerified']);
+        self::assertSame(['fm_id_deelnemer' => ['42'], 'nickname' => ['J']], $representation['attributes']);
+        // Untouched — both modelled and unmodelled.
+        self::assertSame('Doe', $representation['lastName']);
+        self::assertSame('jane@example.test', $representation['email']);
+        self::assertSame(1700000000000, $representation['createdTimestamp']);
+
+        // The mutators are immutable — the original is unchanged.
+        self::assertSame('Jane', KeycloakUser::fromRawResponse($raw)->firstName);
+    }
+
+    #[Test]
+    public function does_not_invent_null_identity_fields_absent_from_the_source(): void
+    {
+        // A source that never carried email/firstName/lastName must not gain them as null on write.
+        $representation = KeycloakUser::fromRawResponse(['id' => 'a', 'username' => 'u'])->toRepresentation();
+
+        self::assertArrayNotHasKey('email', $representation);
+        self::assertArrayNotHasKey('firstName', $representation);
+        self::assertArrayNotHasKey('lastName', $representation);
+        self::assertSame('u', $representation['username']);
+    }
 }

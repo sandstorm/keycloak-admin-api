@@ -67,6 +67,13 @@ final readonly class KeycloakUsersApiImplementation implements KeycloakUsersApi
         return KeycloakUser::fromRawResponse($raw);
     }
 
+    public function update(KeycloakUser $user): void
+    {
+        // Read-modify-write: toRepresentation() carries back every field Keycloak returned, so this PUT
+        // never clobbers data the DTO does not model. A non-2xx (incl. FGAP 403) throws from the transport.
+        $this->transport->putJson('users/' . rawurlencode($user->id->value), $user->toRepresentation());
+    }
+
     /**
      * Shared search/enabled query params for both list and count so the paginator total always
      * matches the listed rows.

@@ -32,4 +32,16 @@ interface KeycloakUsersApi
      * The full (non-brief) representation — carries custom attributes that {@see self::list()} omits.
      */
     public function getById(KeycloakUserId $id): KeycloakUser;
+
+    /**
+     * Persist edits to an existing user (`PUT /users/{id}`). Read-modify-write: pass a {@see KeycloakUser}
+     * obtained from {@see self::getById()} and mutated via its `with*()` helpers — its
+     * {@see KeycloakUser::toRepresentation()} preserves every field Keycloak returned, so unmodelled data
+     * is never dropped.
+     *
+     * Under `sso` (act-as-user) auth this is where Keycloak's fine-grained permissions bite: a caller
+     * lacking `manage` on the target surfaces as an {@see UnexpectedKeycloakResponseException} with
+     * ->statusCode 403 (never a silent no-op).
+     */
+    public function update(KeycloakUser $user): void;
 }

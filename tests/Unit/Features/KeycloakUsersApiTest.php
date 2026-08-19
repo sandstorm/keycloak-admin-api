@@ -106,6 +106,60 @@ final class KeycloakUsersApiTest extends TestCase
     }
 
     #[Test]
+    public function update_puts_the_full_representation_to_the_user_endpoint(): void
+    {
+        // getById first (full representation), then a 204 for the PUT.
+        $mock = new MockKeycloak([
+            MockKeycloak::json([
+                'id' => 'u-42',
+                'username' => 'jane',
+                'firstName' => 'Jane',
+                'lastName' => 'Doe',
+                'enabled' => true,
+                'emailVerified' => false,
+                'createdTimestamp' => 1700000000000,
+            ]),
+            new Response(204, [], ''),
+        ]);
+
+        $api = new KeycloakUsersApiImplementation($mock->transport);
+        $user = $api->getById(new KeycloakUserId('u-42'));
+
+        $api->update($user->withFirstName('Janet')->withEnabled(false)->withEmailVerified(true));
+
+        self::assertSame('PUT', $mock->lastMethod());
+        self::assertStringEndsWith('/admin/realms/test-realm/users/u-42', $mock->lastUri());
+
+        $body = json_decode($mock->lastBody(), true);
+        self::assertIsArray($body);
+        self::assertSame('Janet', $body['firstName']);
+        self::assertFalse($body['enabled']);
+        self::assertTrue($body['emailVerified']);
+        // Unmodelled field from the fetched representation is preserved on the way back.
+        self::assertSame(1700000000000, $body['createdTimestamp']);
+    }
+
+    #[Test]
+    public function update_surfaces_a_403_as_the_response_exception_carrying_status_403(): void
+    {
+        // The FGAP denial path: a caller without manage on the target gets a real 403, never a no-op.
+        $mock = new MockKeycloak([
+            MockKeycloak::json(['id' => 'u-42', 'username' => 'jane']),
+            new Response(403, [], '{"error":"insufficient_scope"}'),
+        ]);
+
+        $api = new KeycloakUsersApiImplementation($mock->transport);
+        $user = $api->getById(new KeycloakUserId('u-42'));
+
+        try {
+            $api->update($user->withFirstName('Janet'));
+            self::fail('expected an UnexpectedKeycloakResponseException');
+        } catch (UnexpectedKeycloakResponseException $exception) {
+            self::assertSame(403, $exception->statusCode);
+        }
+    }
+
+    #[Test]
     public function a_403_surfaces_as_the_response_exception_carrying_status_403(): void
     {
         $mock = new MockKeycloak([new Response(403, [], 'Forbidden')]);
