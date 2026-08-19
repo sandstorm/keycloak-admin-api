@@ -105,7 +105,7 @@ Legend: ✅ implemented · 🟡 partial · ❌ not implemented (candidate)
 | 18 | Roles                        |   ❌   | realm/client role definitions                                                                                                  |
 | 19 | Roles (by ID)                |   ❌   | -                                                                                                                              |
 | 20 | Scope Mappings               |   ❌   | -                                                                                                                              |
-| 21 | **Users**                    |   🟡   | read + **update** + credentials + sessions + membership (see detail below); create/delete/reset-password and many sub-resources - ❌ |
+| 21 | **Users**                    |   🟡   | read + **update** + **user-profile schema** + credentials + sessions + membership (see detail below); create/delete/reset-password and many sub-resources - ❌ |
 | 22 | Workflows                    |   ❌   | -                                                                                                                              |
 |  - | OIDC token endpoint          |   ✅   | `POST /realms/{realm}/protocol/openid-connect/token` - `ServiceAccountTokenProvider`                                           |
 
@@ -116,7 +116,7 @@ Legend: ✅ implemented · 🟡 partial · ❌ not implemented (candidate)
 | `GET /users`                                                                           |   ✅   | `KeycloakUsersApi::list`                                      |
 | `POST /users`                                                                          |   ❌   | create                                                        |
 | `GET /users/count`                                                                     |   ✅   | `KeycloakUsersApi::count`                                     |
-| `GET /users/profile`                                                                   |   ❌   | user-profile **attribute schema** (Users group)               |
+| `GET /users/profile`                                                                   |   ✅   | `KeycloakRealmApi::getUserProfile` (attribute schema + per-role perms) |
 | `PUT /users/profile`                                                                   |   ❌   | user-profile schema authoring                                 |
 | `GET /users/profile/metadata`                                                          |   ❌   | user-profile metadata (drives proactive form rendering)       |
 | `GET /users/{user-id}`                                                                 |   ✅   | `KeycloakUsersApi::getById`                                   |
@@ -229,6 +229,7 @@ src/
     KeycloakCredentialsApi.php    + KeycloakCredentialsApi/{…}
     KeycloakSessionsApi.php       + KeycloakSessionsApi/{…}
     KeycloakEventsApi.php         + KeycloakEventsApi/{…}
+    KeycloakRealmApi.php          + KeycloakRealmApi/{…Implementation, Dto/KeycloakUserProfile…}
 ```
 
 Each feature keeps its interface, implementation, and DTOs together. Interfaces carry the `Keycloak`
