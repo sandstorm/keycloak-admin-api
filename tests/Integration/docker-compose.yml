@@ -1,7 +1,8 @@
 # Throwaway Keycloak for the end-to-end (Integration) test suite. It boots the exact target version
-# and imports a self-contained realm (realm-import.json) that pre-provisions the service-account
-# client, its realm-management roles, and seed data — so the E2E tests prove the real wire contract
-# without touching any shared/staging Keycloak.
+# and imports two self-contained realms: `test-realm` (realm-import.json) with the service-account
+# client + realm-management roles + seed data, and `test-realm-fgap` (realm-import-fgap.json) with
+# Admin Permissions (FGAP) ON for the per-admin authorisation + `access`-map tests. So the E2E tests
+# prove the real wire contract in both authorization modes without touching any shared/staging Keycloak.
 #
 #   docker compose -f tests/Integration/docker-compose.yml up -d
 #   KEYCLOAK_E2E_BASE_URL=http://localhost:9911 vendor/bin/phpunit --testsuite integration
@@ -21,6 +22,9 @@ services:
       - mailpit
     volumes:
       - ./realm-import.json:/opt/keycloak/data/import/realm-import.json:ro
+      # Second realm: Admin Permissions (FGAP) ON — proves the caller-relative `access` map and
+      # per-admin write authorisation. Keycloak imports every JSON in the import dir.
+      - ./realm-import-fgap.json:/opt/keycloak/data/import/realm-import-fgap.json:ro
     healthcheck:
       # /health/ready is served on the management port (9000) in Keycloak 26.
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '\"status\": \"UP\"'"]

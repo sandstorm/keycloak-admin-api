@@ -13,6 +13,7 @@ use Sandstorm\KeycloakAdminApi\Connection\KeycloakSettingsProvider;
 use Sandstorm\KeycloakAdminApi\Connection\KeycloakTransport;
 use Sandstorm\KeycloakAdminApi\Features\KeycloakUsersApi\KeycloakUsersApiImplementation;
 use Sandstorm\KeycloakAdminApi\SharedModel\KeycloakUserId;
+use Sandstorm\KeycloakAdminApi\Tests\Support\DirectGrantTokenProvider;
 
 use function getenv;
 
@@ -67,6 +68,36 @@ abstract class IntegrationTestCase extends TestCase
             $httpFactory,
             $httpFactory,
             new ServiceAccountTokenProvider($settings, $client, $httpFactory, $httpFactory),
+        );
+    }
+
+    /**
+     * A transport whose bearer is a **real user** token from the given realm's direct-grant client — i.e.
+     * every Admin-API call is made *as that user*, so Keycloak evaluates that user's own grants (the
+     * act-as-user path the FGAP / `access`-map tests need). The default {@see $transport} stays the
+     * service-account identity for the classic-role suites.
+     */
+    protected function transportActingAs(string $realm, string $username): KeycloakTransport
+    {
+        $connection = new KeycloakSettings($this->baseUrl, $realm, 'unused-by-transport', 'unused-by-transport');
+
+        $settings = new readonly class($connection) implements KeycloakSettingsProvider {
+            public function __construct(private KeycloakSettings $connection) {}
+
+            public function get(): KeycloakSettings
+            {
+                return $this->connection;
+            }
+        };
+
+        $httpFactory = new HttpFactory();
+
+        return new KeycloakTransport(
+            $settings,
+            new Client(['timeout' => 10]),
+            $httpFactory,
+            $httpFactory,
+            new DirectGrantTokenProvider($this->baseUrl, $realm, $username),
         );
     }
 

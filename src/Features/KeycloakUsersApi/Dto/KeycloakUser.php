@@ -45,6 +45,7 @@ final readonly class KeycloakUser
         public bool $enabled = true,
         public bool $emailVerified = false,
         public array $requiredActions = [],
+        public KeycloakUserAccess $access = new KeycloakUserAccess(),
         private array $raw = [],
     ) {}
 
@@ -85,6 +86,11 @@ final readonly class KeycloakUser
             }
         }
 
+        // Caller-relative capability map (what THIS caller may do to THIS user). Absent in brief
+        // representations → all-false (nothing shown as editable).
+        $rawAccess = $raw['access'] ?? null;
+        $access = is_array($rawAccess) ? KeycloakUserAccess::fromRawAccess($rawAccess) : KeycloakUserAccess::empty();
+
         // Keycloak returns attributes as { key: [value, ...] } — every attribute is a list.
         // Normalize each value to a string and re-index the list (so the result is a clean
         // list<string> regardless of how Keycloak typed/keyed the raw JSON).
@@ -112,6 +118,7 @@ final readonly class KeycloakUser
             $enabled,
             $emailVerified,
             $requiredActions,
+            $access,
             $raw,
         );
     }
@@ -221,6 +228,7 @@ final readonly class KeycloakUser
             $enabled ?? $this->enabled,
             $emailVerified ?? $this->emailVerified,
             $this->requiredActions,
+            $this->access,
             $this->raw,
         );
     }

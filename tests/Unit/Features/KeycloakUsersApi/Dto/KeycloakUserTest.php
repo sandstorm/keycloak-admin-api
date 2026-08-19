@@ -150,6 +150,55 @@ final class KeycloakUserTest extends TestCase
     }
 
     #[Test]
+    public function parses_the_caller_relative_access_capability_map(): void
+    {
+        $user = KeycloakUser::fromRawResponse([
+            'id' => 'a',
+            'username' => 'u',
+            'access' => [
+                'manage' => true,
+                'view' => true,
+                'manageGroupMembership' => true,
+                'mapRoles' => false,
+                'impersonate' => true,
+            ],
+        ]);
+
+        self::assertTrue($user->access->manage);
+        self::assertTrue($user->access->view);
+        self::assertTrue($user->access->manageGroupMembership);
+        self::assertFalse($user->access->mapRoles);
+        self::assertTrue($user->access->impersonate);
+    }
+
+    #[Test]
+    public function defaults_access_to_all_false_when_absent(): void
+    {
+        $user = KeycloakUser::fromRawResponse(['id' => 'a', 'username' => 'u']);
+
+        self::assertFalse($user->access->manage);
+        self::assertFalse($user->access->view);
+        self::assertFalse($user->access->manageGroupMembership);
+        self::assertFalse($user->access->mapRoles);
+        self::assertFalse($user->access->impersonate);
+    }
+
+    #[Test]
+    public function tolerates_a_partial_or_mistyped_access_object(): void
+    {
+        // Only `manage` present, `view` mistyped as a string, the rest absent → every non-true-bool false.
+        $user = KeycloakUser::fromRawResponse([
+            'id' => 'a',
+            'username' => 'u',
+            'access' => ['manage' => true, 'view' => 'yes'],
+        ]);
+
+        self::assertTrue($user->access->manage);
+        self::assertFalse($user->access->view);
+        self::assertFalse($user->access->impersonate);
+    }
+
+    #[Test]
     public function does_not_invent_null_identity_fields_absent_from_the_source(): void
     {
         // A source that never carried email/firstName/lastName must not gain them as null on write.

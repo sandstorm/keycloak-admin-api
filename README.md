@@ -247,15 +247,46 @@ Two tiers:
 - **Unit** (`tests/Unit`) - fast, hermetic. Real logic only (DTO/collection parsing tolerance, token cache, array-body
   encoding, query building, the non-2xx → `UnexpectedKeycloakResponseException` (with `statusCode`) mapping) driven through a PSR-18 mock.
 - **Integration / E2E** (`tests/Integration`) - runs the client against a **real Keycloak 26.5.3** in Docker
-  (`tests/Integration/docker-compose.yml` imports a self-contained `test-realm`). This proves the wire contract unit
+  (`tests/Integration/docker-compose.yml` imports two self-contained realms). This proves the wire contract unit
   tests cannot.
 
 ```bash
-mise run e2e              # boot Keycloak, run the integration suite, tear down
+mise run e2e              # boot Keycloak (both realms), run the integration suite, tear down
 # or step by step:
 mise run e2e:up
 mise run test:integration
 mise run e2e:down
+```
+
+**Log into the Keycloak admin console** at <http://localhost:9911> with **`admin` / `admin`**. Seeded users all
+have password `changeit`.
+
+Two realms are imported so the wire contract is proven in both authorization modes — classic
+`realm-management` roles **and** Fine-Grained Admin Permissions (FGAP). The FGAP realm drives the
+caller-relative `access` map (`KeycloakUser::$access`) and per-caller write authorisation: a **user** bearer is
+obtained via the public `e2e-login` direct-grant client (`tests/Support/DirectGrantTokenProvider`), so calls run
+*as that user* and Keycloak evaluates that user's own grants.
+
+| Realm             | Admin Permissions (FGAP) | Notable seeded users / caller identity                                                    |
+|-------------------|--------------------------|-------------------------------------------------------------------------------------------|
+| `test-realm`      | **off** (classic roles)  | service account (`admin-api`, realm-management roles), `login-user` (none), `jane` in `/staff` |
+| `test-realm-fgap` | **on**                   | `admin-user` (roles), `login-user` (none), `sarah` + `jane` in `/staff`, `emma` in `/endusers` |
+
+#### FGAP staff policy (baked into `realm-import-fgap.json`)
+
+Staff read everyone, edit endusers, can't touch other staff:
+
+```
+match-staff  = Group policy → members of /staff
+                │
+   ┌────────────┴─────────────────────────────┐
+   ▼                                           ▼
+"staff can view all"                  "staff can manage endusers"
+ Users · view · All users              Groups · manage-members · group /endusers
+   │                                           │
+   ▼                                           ▼
+ sarah ──view──▶ everyone            sarah ──manage──▶ emma (∈/endusers)  ✔
+                                     sarah ──manage──▶ jane (∈/staff)     ✘ 403
 ```
 
 ## License
