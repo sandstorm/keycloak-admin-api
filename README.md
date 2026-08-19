@@ -11,19 +11,17 @@ It exposes the admin API in modern PHP, using **immutable typed DTOs and collect
 
 
 <!-- TOC -->
-
 * [sandstorm/keycloak-admin-api](#sandstormkeycloak-admin-api)
-    * [Requirements](#requirements)
-    * [Usage](#usage)
-    * [Keycloak REST API coverage](#keycloak-rest-api-coverage)
-        * [#21 - Users (paths under `/admin/realms/{realm}`)](#21---users-paths-under-adminrealmsrealm)
-        * [#11 - Groups (paths under `/admin/realms/{realm}`)](#11---groups-paths-under-adminrealmsrealm)
-        * [#16 - Realms Admin (paths under `/admin/realms`)](#16---realms-admin-paths-under-adminrealms)
-    * [Development Ideas](#development-ideas)
-        * [Package layout (feature-first)](#package-layout-feature-first)
-    * [Unit and Integration Tests](#unit-and-integration-tests)
-    * [License](#license)
-
+  * [Requirements](#requirements)
+  * [Usage](#usage)
+  * [Keycloak REST API coverage](#keycloak-rest-api-coverage)
+    * [#21 - Users (paths under `/admin/realms/{realm}`)](#21---users-paths-under-adminrealmsrealm)
+    * [#11 - Groups (paths under `/admin/realms/{realm}`)](#11---groups-paths-under-adminrealmsrealm)
+    * [#16 - Realms Admin (paths under `/admin/realms`)](#16---realms-admin-paths-under-adminrealms)
+  * [Development Ideas](#development-ideas)
+    * [Package layout (feature-first)](#package-layout-feature-first)
+  * [Unit and Integration Tests](#unit-and-integration-tests)
+  * [License](#license)
 <!-- TOC -->
 
 ## Requirements
@@ -41,6 +39,7 @@ use Sandstorm\KeycloakAdminApi\Connection\KeycloakSettings;
 use Sandstorm\KeycloakAdminApi\Connection\KeycloakSettingsProvider;
 use Sandstorm\KeycloakAdminApi\Connection\KeycloakTransport;
 use Sandstorm\KeycloakAdminApi\Features\KeycloakUsersApi\KeycloakUsersApiImplementation;
+use Sandstorm\KeycloakAdminApi\SharedModel\KeycloakUserId;
 
 $settings = new class implements KeycloakSettingsProvider {
     public function get(): KeycloakSettings {
@@ -64,6 +63,17 @@ $users = new KeycloakUsersApiImplementation($transport);
 foreach ($users->list(search: 'jane', first: 0, max: 20, enabled: true) as $user) {
     echo $user->username, ' ', $user->fullName() ?? '', PHP_EOL;
 }
+
+// Update: read-modify-write. Fetch the full user, apply edits with the immutable `with*()` mutators,
+// then PUT it back. toRepresentation() overlays only the edited fields onto the original response, so
+// any Keycloak field this DTO does not model round-trips untouched (never clobbered).
+$user = $users->getById(new KeycloakUserId('…'));
+$users->update(
+    $user->withFirstName('Janet')
+         ->withEnabled(false)
+         ->withEmailVerified(true)
+         ->withAttribute('nickname', ['J']),
+);
 ```
 
 ## Keycloak REST API coverage
@@ -95,7 +105,7 @@ Legend: ✅ implemented · 🟡 partial · ❌ not implemented (candidate)
 | 18 | Roles                        |   ❌   | realm/client role definitions                                                                                                  |
 | 19 | Roles (by ID)                |   ❌   | -                                                                                                                              |
 | 20 | Scope Mappings               |   ❌   | -                                                                                                                              |
-| 21 | **Users**                    |   🟡   | read + credentials + sessions + membership (see detail below); create/update/delete/reset-password and many sub-resources - ❌ |
+| 21 | **Users**                    |   🟡   | read + **update** + credentials + sessions + membership (see detail below); create/delete/reset-password and many sub-resources - ❌ |
 | 22 | Workflows                    |   ❌   | -                                                                                                                              |
 |  - | OIDC token endpoint          |   ✅   | `POST /realms/{realm}/protocol/openid-connect/token` - `ServiceAccountTokenProvider`                                           |
 
@@ -110,7 +120,7 @@ Legend: ✅ implemented · 🟡 partial · ❌ not implemented (candidate)
 | `PUT /users/profile`                                                                   |   ❌   | user-profile schema authoring                                 |
 | `GET /users/profile/metadata`                                                          |   ❌   | user-profile metadata (drives proactive form rendering)       |
 | `GET /users/{user-id}`                                                                 |   ✅   | `KeycloakUsersApi::getById`                                   |
-| `PUT /users/{user-id}`                                                                 |   ❌   | update (enable/disable, username, names)                      |
+| `PUT /users/{user-id}`                                                                 |   ✅   | `KeycloakUsersApi::update` (lossless read-modify-write)        |
 | `DELETE /users/{user-id}`                                                              |   ❌   | user deletion                                                 |
 | `GET /users/{user-id}/configured-user-storage-credential-types`                        |   ❌   | -                                                             |
 | `GET /users/{user-id}/consents`                                                        |   ❌   | -                                                             |
